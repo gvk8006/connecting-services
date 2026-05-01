@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:3001"]
 
+    # Port (Railway sets PORT env var)
+    PORT: int = 8001
+
     class Config:
         env_file = ".env"
 

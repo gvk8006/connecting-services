@@ -3,6 +3,7 @@ Marketing Agency AI - Main FastAPI Application
 Real-time lead generation platform powered by autonomous AI agents.
 """
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -39,10 +40,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS
+# CORS - in production allow the frontend domain
+cors_origins = settings.CORS_ORIGINS
+if os.getenv("RAILWAY_ENVIRONMENT"):
+    frontend_url = os.getenv("FRONTEND_URL", "")
+    cors_origins = [frontend_url] if frontend_url else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
