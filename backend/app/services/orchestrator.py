@@ -58,7 +58,7 @@ class AgentOrchestrator:
                     agent_type=AgentType.PROSPECTOR,
                     config={
                         "services": ["website", "saas", "ai_agents", "chatbot", "web_app", "crm", "qc_ai"],
-                        "channels": ["google", "reddit", "twitter"],
+                        "channels": ["google", "reddit", "twitter", "apify", "apify_maps"],
                         "max_per_service": 15,
                     },
                     is_enabled=True,
@@ -137,31 +137,33 @@ class AgentOrchestrator:
         return {"success": True, "message": f"Agent {agent_id} started"}
 
     async def run_all_agents(self) -> dict:
-        """Run all enabled agents sequentially: scraper -> qualifier -> outreach."""
+        """Run all enabled agents sequentially in background: prospect -> qualify -> outreach."""
         async with async_session() as session:
             result = await session.execute(
                 select(Agent).where(Agent.is_enabled == True)
             )
             agents = result.scalars().all()
 
-        results = {}
-        # Run in priority order: prospect -> qualify -> outreach
-        order = [AgentType.PROSPECTOR, AgentType.FORM_PROCESSOR, AgentType.QUALIFIER, AgentType.OUTREACH_CONNECTOR]
+        if not agents:
+            return {"success": True, "message": "No enabled agents found"}
 
-        for agent_type in order:
-            matching = [a for a in agents if a.agent_type == agent_type]
-            for agent_model in matching:
-                agent_result = await self.run_agent(agent_model.id)
-                results[agent_model.name] = agent_result
+        # Run the sequential pipeline in a background task so the HTTP response returns immediately
+        async def _run_pipeline():
+            order = [AgentType.PROSPECTOR, AgentType.FORM_PROCESSOR, AgentType.QUALIFIER, AgentType.OUTREACH_CONNECTOR]
+            for agent_type in order:
+                matching = [a for a in agents if a.agent_type == agent_type]
+                for agent_model in matching:
+                    await self.run_agent(agent_model.id)
+                    if agent_model.id in self._running_tasks:
+                        try:
+                            await self._running_tasks[agent_model.id]
+                        except Exception as e:
+                            logger.error(f"Agent {agent_model.name} failed: {e}")
 
-                # Wait for the task to complete before next step
-                if agent_model.id in self._running_tasks:
-                    try:
-                        await self._running_tasks[agent_model.id]
-                    except Exception as e:
-                        logger.error(f"Agent {agent_model.name} failed: {e}")
+        asyncio.create_task(_run_pipeline())
 
-        return {"success": True, "results": results}
+        agent_names = [a.name for a in agents]
+        return {"success": True, "message": f"Started {len(agents)} agents in background", "agents": agent_names}
 
     async def get_agent_statuses(self) -> list[dict]:
         """Get current status of all agents."""

@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: Optional[str] = None
     GOOGLE_CSE_ID: Optional[str] = None
 
+    # Telegram Notifications
+    TELEGRAM_BOT_TOKEN: Optional[str] = None
+    TELEGRAM_CHAT_ID: Optional[str] = None
+
+    # Apify
+    APIFY_API_TOKEN: Optional[str] = None
+
     # CORS
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:3001"]
 

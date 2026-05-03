@@ -8,6 +8,8 @@ Primary channels:
   3. DuckDuckGo job/hiring search - job boards, freelancer platforms
   4. Google Custom Search API (if configured)
   5. Twitter/X API (if configured)
+  6. Apify Google Search Scraper (if configured) - deep web search
+  7. Apify Google Maps Scraper (if configured) - local business discovery
 
 Each discovered lead is tagged with the service they need.
 """
@@ -120,6 +122,15 @@ SERVICE_CATEGORIES = {
             "need website help", "who builds websites",
         ],
         "reddit_subs": ["smallbusiness", "Entrepreneur", "freelance", "web_design", "webdev"],
+        "apify_queries": [
+            "need website built for my business site:reddit.com OR site:quora.com",
+            "looking for web developer small business",
+            "hire someone to build a website for startup",
+        ],
+        "apify_maps_queries": [
+            "small business without website",
+            "new business needs website",
+        ],
     },
     "saas": {
         "label": "SaaS Tool Development",
@@ -147,6 +158,15 @@ SERVICE_CATEGORIES = {
             "SaaS MVP help", "build my SaaS idea",
         ],
         "reddit_subs": ["SaaS", "startups", "Entrepreneur", "microsaas", "indiehackers"],
+        "apify_queries": [
+            "need SaaS MVP built site:reddit.com OR site:indiehackers.com",
+            "looking for developer to build SaaS product",
+            "hire SaaS developer for startup MVP",
+        ],
+        "apify_maps_queries": [
+            "startup looking for SaaS development",
+            "SaaS product development needed",
+        ],
     },
     "ai_agents": {
         "label": "AI Agents",
@@ -174,6 +194,15 @@ SERVICE_CATEGORIES = {
             "AI automation for business", "custom AI assistant",
         ],
         "reddit_subs": ["smallbusiness", "Entrepreneur", "ChatGPT", "artificial", "AutoGPT"],
+        "apify_queries": [
+            "need AI agent built for business site:reddit.com OR site:quora.com",
+            "looking for AI automation developer for company",
+            "hire AI developer to build custom agent",
+        ],
+        "apify_maps_queries": [
+            "business needs AI automation",
+            "company looking for AI agent developer",
+        ],
     },
     "chatbot": {
         "label": "Chatbot Development",
@@ -201,6 +230,15 @@ SERVICE_CATEGORIES = {
             "chatbot for my website", "customer service chatbot help",
         ],
         "reddit_subs": ["smallbusiness", "Entrepreneur", "CustomerService", "chatbots"],
+        "apify_queries": [
+            "need chatbot for website customer support site:reddit.com OR site:quora.com",
+            "looking for chatbot developer for business",
+            "hire someone to build WhatsApp chatbot",
+        ],
+        "apify_maps_queries": [
+            "business needs chatbot for customer service",
+            "company looking for chatbot solution",
+        ],
     },
     "web_app": {
         "label": "Web Application",
@@ -227,6 +265,15 @@ SERVICE_CATEGORIES = {
             "custom web application help", "build my web platform",
         ],
         "reddit_subs": ["webdev", "reactjs", "startups", "Entrepreneur", "freelance"],
+        "apify_queries": [
+            "need custom web application built site:reddit.com OR site:indiehackers.com",
+            "looking for full stack developer to build web app",
+            "hire developer for React or Next.js web application",
+        ],
+        "apify_maps_queries": [
+            "startup needs custom web application",
+            "business looking for web app development",
+        ],
     },
     "crm": {
         "label": "CRM Development",
@@ -253,6 +300,15 @@ SERVICE_CATEGORIES = {
             "build CRM for business", "custom CRM system",
         ],
         "reddit_subs": ["CRM", "smallbusiness", "sales", "Entrepreneur"],
+        "apify_queries": [
+            "need custom CRM built for business site:reddit.com OR site:quora.com",
+            "looking for CRM developer alternative to Salesforce",
+            "hire someone to build bespoke CRM system",
+        ],
+        "apify_maps_queries": [
+            "small business needs custom CRM",
+            "company looking for CRM development",
+        ],
     },
     "qc_ai": {
         "label": "Quality Check AI Tool",
@@ -279,6 +335,15 @@ SERVICE_CATEGORIES = {
             "AI inspection system help", "quality assurance AI tool",
         ],
         "reddit_subs": ["MachineLearning", "manufacturing", "QualityAssurance", "smallbusiness"],
+        "apify_queries": [
+            "need AI quality control tool for manufacturing site:reddit.com OR site:quora.com",
+            "looking for automated visual inspection system AI",
+            "hire AI quality assurance developer",
+        ],
+        "apify_maps_queries": [
+            "manufacturing company needs quality control AI",
+            "factory looking for automated inspection system",
+        ],
     },
 }
 
@@ -294,6 +359,8 @@ class ProspectorTool(BaseAgent):
     3. DDG job-board search - Indeed, Reed, PeoplePerHour postings
     4. Google Custom Search API (if configured)
     5. Twitter/X API (if configured)
+    6. Apify Google Search Scraper (if configured) - deep web search
+    7. Apify Google Maps Scraper (if configured) - local business discovery
 
     Provider detection filters ensure we skip company/agency websites.
     """
@@ -404,14 +471,14 @@ class ProspectorTool(BaseAgent):
         params = params or {}
         target_services = params.get("services", list(SERVICE_CATEGORIES.keys()))
         channels = params.get("channels", self.config.get(
-            "channels", ["reddit", "ddg_forums", "ddg_jobs", "google", "twitter"]
+            "channels", ["reddit", "ddg_forums", "ddg_jobs", "google", "twitter", "apify", "apify_maps"]
         ))
         max_per_service = params.get("max_per_service", self.config.get("max_per_service", 15))
         # Prospecting mode: "seekers_only" (default), "providers_only", "both"
         prospecting_mode = params.get("prospecting_mode", self.config.get("prospecting_mode", "seekers_only"))
 
         all_leads = []
-        stats = {"reddit": 0, "ddg_forums": 0, "ddg_jobs": 0, "google": 0, "twitter": 0, "providers_found": 0}
+        stats = {"reddit": 0, "ddg_forums": 0, "ddg_jobs": 0, "google": 0, "twitter": 0, "apify": 0, "apify_maps": 0, "providers_found": 0}
 
         for service_key in target_services:
             if service_key not in SERVICE_CATEGORIES:
@@ -469,6 +536,26 @@ class ProspectorTool(BaseAgent):
                     except Exception as e:
                         logger.warning(f"Twitter search failed for {service_key}: {e}")
 
+                # Channel 6: Apify Google Search Scraper (if configured)
+                if "apify" in channels:
+                    try:
+                        apify_leads = await self._search_apify(service_key, service)
+                        service_leads.extend(apify_leads)
+                        stats["apify"] += len(apify_leads)
+                        logger.info(f"Apify Search found {len(apify_leads)} leads for {service_key}")
+                    except Exception as e:
+                        logger.warning(f"Apify search failed for {service_key}: {e}")
+
+                # Channel 7: Apify Google Maps Scraper (if configured)
+                if "apify_maps" in channels:
+                    try:
+                        maps_leads = await self._search_apify_maps(service_key, service)
+                        service_leads.extend(maps_leads)
+                        stats["apify_maps"] += len(maps_leads)
+                        logger.info(f"Apify Maps found {len(maps_leads)} leads for {service_key}")
+                    except Exception as e:
+                        logger.warning(f"Apify Maps search failed for {service_key}: {e}")
+
             # --- Provider channel (when mode is providers_only or both) ---
             if prospecting_mode in ("providers_only", "both"):
                 try:
@@ -485,6 +572,8 @@ class ProspectorTool(BaseAgent):
         # Deduplicate and save
         saved = 0
         seen = set()
+        saved_services: dict[str, int] = {}
+        saved_channels: dict[str, int] = {}
         for lead_data in all_leads:
             identifier = lead_data.get("email") or lead_data.get("twitter_handle") or lead_data.get("source_url", "")
             if not identifier or identifier in seen:
@@ -547,8 +636,16 @@ class ProspectorTool(BaseAgent):
             )
             session.add(activity)
             saved += 1
+            svc = lead_data.get("service_needed", "unknown")
+            ch = lead_data.get("channel", "search")
+            saved_services[svc] = saved_services.get(svc, 0) + 1
+            saved_channels[ch] = saved_channels.get(ch, 0) + 1
 
         await session.commit()
+
+        # Telegram notification
+        from app.services.telegram_notifier import telegram
+        await telegram.notify_new_leads(saved, saved_services, saved_channels)
 
         return {
             "success": True,
@@ -853,6 +950,201 @@ class ProspectorTool(BaseAgent):
                 logger.warning(f"Provider search failed for '{query}': {e}")
 
             await asyncio.sleep(1.5)
+
+        return leads
+
+    # ------------------------------------------------------------------
+    # Apify Google Search Scraper (deep web search via Apify actors)
+    # ------------------------------------------------------------------
+
+    async def _search_apify(self, service_key: str, service: dict) -> list[dict]:
+        """
+        Search via Apify Google Search Scraper actor (nFJndFXA5zjCTuudP).
+        Returns leads from deep Google search results including community posts.
+        """
+        from app.core.config import settings
+        leads = []
+
+        if not settings.APIFY_API_TOKEN:
+            logger.info("Apify token not configured, skipping Apify search")
+            return leads
+
+        actor_id = "nFJndFXA5zjCTuudP"  # Google Search Scraper
+        api_url = f"https://api.apify.com/v2/acts/{actor_id}/run-sync-get-dataset-items"
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            for query in service.get("apify_queries", [])[:3]:
+                try:
+                    resp = await client.post(
+                        api_url,
+                        params={"token": settings.APIFY_API_TOKEN},
+                        json={
+                            "queries": query,
+                            "maxPagesPerQuery": 1,
+                            "resultsPerPage": 10,
+                            "languageCode": "en",
+                            "mobileResults": False,
+                        },
+                        timeout=90.0,
+                    )
+
+                    if resp.status_code != 200 and resp.status_code != 201:
+                        logger.warning(f"Apify search returned {resp.status_code}: {resp.text[:200]}")
+                        continue
+
+                    results = resp.json()
+                    if not isinstance(results, list):
+                        results = results.get("items", []) if isinstance(results, dict) else []
+
+                    for item in results:
+                        # Handle nested organicResults from Google Search Scraper
+                        organic = item.get("organicResults", [])
+                        if organic:
+                            for r in organic[:8]:
+                                url = r.get("url", "")
+                                title = r.get("title", "")
+                                desc = r.get("description", "")
+
+                                if not url:
+                                    continue
+
+                                # Skip provider websites
+                                if self._is_provider_url(url, title, desc):
+                                    continue
+
+                                lead_data = {
+                                    "source_url": url,
+                                    "company": self._extract_company_from_url(url),
+                                    "notes": f"Apify Search (seeker): {title}\n{desc[:300]}",
+                                    "source": LeadSource.GOOGLE_SEARCH,
+                                    "service_needed": service_key,
+                                    "channel": "apify",
+                                    "tags": [service_key, "apify", "seeker", "prospector"],
+                                }
+
+                                # Try extracting email from snippet
+                                snippet_emails = EMAIL_REGEX.findall(f"{title} {desc}")
+                                snippet_emails = [
+                                    e for e in set(snippet_emails)
+                                    if not any(j in e.lower() for j in JUNK_EMAIL_PATTERNS)
+                                ]
+                                if snippet_emails:
+                                    lead_data["email"] = snippet_emails[0]
+                                    name_parts = snippet_emails[0].split("@")[0].replace(".", " ").replace("_", " ").split()
+                                    lead_data["first_name"] = name_parts[0].title() if name_parts else None
+                                    lead_data["last_name"] = name_parts[1].title() if len(name_parts) > 1 else None
+
+                                leads.append(lead_data)
+                        else:
+                            # Flat result format
+                            url = item.get("url", "") or item.get("link", "")
+                            title = item.get("title", "")
+                            desc = item.get("description", "") or item.get("snippet", "")
+
+                            if not url:
+                                continue
+                            if self._is_provider_url(url, title, desc):
+                                continue
+
+                            leads.append({
+                                "source_url": url,
+                                "company": self._extract_company_from_url(url),
+                                "notes": f"Apify Search (seeker): {title}\n{desc[:300]}",
+                                "source": LeadSource.GOOGLE_SEARCH,
+                                "service_needed": service_key,
+                                "channel": "apify",
+                                "tags": [service_key, "apify", "seeker", "prospector"],
+                            })
+
+                except Exception as e:
+                    logger.warning(f"Apify search failed for query '{query}': {e}")
+
+                await asyncio.sleep(2)
+
+        return leads
+
+    # ------------------------------------------------------------------
+    # Apify Google Maps Scraper (local business discovery)
+    # ------------------------------------------------------------------
+
+    async def _search_apify_maps(self, service_key: str, service: dict) -> list[dict]:
+        """
+        Search via Apify Google Maps Scraper actor (nwua9Gu5YrADL7ZDj).
+        Finds local businesses that may need services (potential leads).
+        """
+        from app.core.config import settings
+        leads = []
+
+        if not settings.APIFY_API_TOKEN:
+            logger.info("Apify token not configured, skipping Apify Maps search")
+            return leads
+
+        actor_id = "nwua9Gu5YrADL7ZDj"  # Google Maps Scraper
+        api_url = f"https://api.apify.com/v2/acts/{actor_id}/run-sync-get-dataset-items"
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            for query in service.get("apify_maps_queries", [])[:2]:
+                try:
+                    resp = await client.post(
+                        api_url,
+                        params={"token": settings.APIFY_API_TOKEN},
+                        json={
+                            "searchStringsArray": [query],
+                            "maxCrawledPlacesPerSearch": 10,
+                            "language": "en",
+                            "deeperCityScrape": False,
+                        },
+                        timeout=120.0,
+                    )
+
+                    if resp.status_code != 200 and resp.status_code != 201:
+                        logger.warning(f"Apify Maps returned {resp.status_code}: {resp.text[:200]}")
+                        continue
+
+                    results = resp.json()
+                    if not isinstance(results, list):
+                        results = results.get("items", []) if isinstance(results, dict) else []
+
+                    for place in results:
+                        name = place.get("title", "") or place.get("name", "")
+                        website = place.get("website", "")
+                        phone = place.get("phone", "")
+                        address = place.get("address", "") or place.get("street", "")
+                        category = place.get("categoryName", "")
+                        url = place.get("url", "") or place.get("webUrl", "")
+
+                        if not name:
+                            continue
+
+                        # Skip obvious providers
+                        if website and self._is_provider_url(website, name, category):
+                            continue
+
+                        lead_data = {
+                            "company": name,
+                            "website": website or None,
+                            "phone": phone or None,
+                            "location": address or None,
+                            "source_url": url or website or None,
+                            "notes": f"Google Maps ({category}): {name} - {address}",
+                            "source": LeadSource.GOOGLE_SEARCH,
+                            "service_needed": service_key,
+                            "channel": "apify_maps",
+                            "lead_type": "seeker",
+                            "tags": [service_key, "apify_maps", "local_business", "seeker", "prospector"],
+                        }
+
+                        # Extract email if available in place data
+                        email = place.get("email", "")
+                        if email and not any(j in email.lower() for j in JUNK_EMAIL_PATTERNS):
+                            lead_data["email"] = email
+
+                        leads.append(lead_data)
+
+                except Exception as e:
+                    logger.warning(f"Apify Maps search failed for query '{query}': {e}")
+
+                await asyncio.sleep(2)
 
         return leads
 
