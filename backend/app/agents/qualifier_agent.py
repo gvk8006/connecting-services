@@ -42,6 +42,7 @@ class QualifierAgent(BaseAgent):
 
         scored_count = 0
         qualified_count = 0
+        qualified_leads: list[dict] = []
 
         for lead in leads:
             score, breakdown = await self._score_lead(lead)
@@ -51,12 +52,26 @@ class QualifierAgent(BaseAgent):
             if score >= min_score and lead.status == LeadStatus.NEW:
                 lead.status = LeadStatus.QUALIFIED
                 qualified_count += 1
+                custom = lead.custom_fields or {}
+                qualified_leads.append({
+                    "name": f"{lead.first_name or ''} {lead.last_name or ''}".strip() or lead.company or "Unknown",
+                    "company": lead.company or "N/A",
+                    "score": round(score * 100),
+                    "service": custom.get("service_needed", "unknown"),
+                    "summary": "",
+                })
 
             # Generate AI summary and next action
             summary, next_action = await self._generate_insights(lead, score, breakdown)
             lead.ai_summary = summary
             lead.ai_next_action = next_action
             lead.updated_at = datetime.utcnow()
+
+            # Attach summary to qualified notification if this lead qualified
+            if qualified_leads and qualified_leads[-1]["name"] in (
+                f"{lead.first_name or ''} {lead.last_name or ''}".strip() or lead.company or "Unknown",
+            ):
+                qualified_leads[-1]["summary"] = (summary or "")[:100]
 
             scored_count += 1
 
@@ -70,6 +85,10 @@ class QualifierAgent(BaseAgent):
             session.add(event)
 
         await session.commit()
+
+        # Telegram notification
+        from app.services.telegram_notifier import telegram
+        await telegram.notify_leads_qualified(qualified_leads)
 
         return {
             "success": True,

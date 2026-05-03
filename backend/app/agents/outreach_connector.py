@@ -120,6 +120,7 @@ class OutreachConnector(BaseAgent):
 
         sent_count = 0
         failed_count = 0
+        sent_services: dict[str, int] = {}
         email_svc = EmailService()
 
         for lead in leads:
@@ -188,6 +189,7 @@ BODY: <personalised message>"""
                     )
                     session.add(activity)
                     sent_count += 1
+                    sent_services[service_needed] = sent_services.get(service_needed, 0) + 1
                 else:
                     failed_count += 1
 
@@ -196,6 +198,10 @@ BODY: <personalised message>"""
                 failed_count += 1
 
         await session.commit()
+
+        # Telegram notification
+        from app.services.telegram_notifier import telegram
+        await telegram.notify_outreach_sent(sent_count, sent_services)
 
         return {
             "success": True,
